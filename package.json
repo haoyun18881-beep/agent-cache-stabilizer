@@ -1,10 +1,10 @@
 {
   "name": "agent-cache-stabilizer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "type": "module",
   "description": "OpenAI-compatible proxy that stabilizes agent message streams for prompt-cache friendly upstream calls.",
-  "license": "MIT",
+  "license": "BUSL-1.1",
   "main": "src/server.js",
   "repository": {
     "type": "git",
