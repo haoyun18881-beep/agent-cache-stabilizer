@@ -1,0 +1,17 @@
+config.json
+logs/
+state/
+backups/
+node_modules/
+coverage/
+.env
+.env.*
+*.log
+*.tmp
+*.tgz
+STATUS.md
+TODO.md
+HANDOFF.md
+DECISIONS.md
+DESIGN.md
+AGENTS.md

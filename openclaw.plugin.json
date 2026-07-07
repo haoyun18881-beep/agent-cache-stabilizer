@@ -1,0 +1,9 @@
+{
+  "id": "agent-cache-stabilizer",
+  "name": "agent-cache-stabilizer",
+  "description": "OpenAI-compatible proxy that keeps agent message streams cache-stable for DeepSeek and other long-context models.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false
+  }
+}

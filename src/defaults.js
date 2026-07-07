@@ -1,0 +1,54 @@
+export const defaultConfig = {
+  port: 18801,
+  host: "127.0.0.1",
+  upstream: {
+    baseUrl: "https://api.deepseek.com/v1",
+    apiKey: "",
+    apiKeyEnv: "DEEPSEEK_API_KEY"
+  },
+  identity: {
+    preferHeaders: [
+      "x-openclaw-session-key",
+      "x-openclaw-session-id",
+      "x-session-id",
+      "session_id",
+      "x-session-affinity",
+      "x-client-request-id",
+      "x-acs-task-id",
+      "x-task-id"
+    ],
+    subAgentSessionPattern: "subagent:",
+    openclawSessionStore: ""
+  },
+  waterline: {
+    recentFullTokens: 120000,
+    archiveQaTokens: 80000,
+    trimTriggerTokens: 320000,
+    trimTargetTokens: 200000,
+    archivedToolPrefixChars: 20
+  },
+  sessions: {
+    subAgentMode: "passthrough",
+    subAgentTtlMinutes: 30
+  },
+  logging: {
+    fingerprintOnEveryRequest: false,
+    fingerprintOnCacheRateBelow: 90,
+    debugDumpNext: false,
+    logUpstreamRoute: false,
+    logToolChainRepairDetails: false
+  },
+  runtime: {
+    logDir: "logs",
+    stateDir: "state"
+  },
+  state: {
+    enabled: false,
+    file: "state/main-state.json"
+  },
+  requestTimeoutMs: 180000,
+  models: {
+    providers: {},
+    routes: {}
+  }
+};

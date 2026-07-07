@@ -1,0 +1,43 @@
+{
+  "name": "agent-cache-stabilizer",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "OpenAI-compatible proxy that stabilizes agent message streams for prompt-cache friendly upstream calls.",
+  "license": "MIT",
+  "main": "src/server.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/haoyun18881-beep/agent-cache-stabilizer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/haoyun18881-beep/agent-cache-stabilizer/issues"
+  },
+  "homepage": "https://github.com/haoyun18881-beep/agent-cache-stabilizer#readme",
+  "files": [
+    "src",
+    "scripts",
+    "tests",
+    "config.example.json",
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
+  "keywords": [
+    "agent",
+    "openai-compatible",
+    "prompt-cache",
+    "proxy",
+    "long-context"
+  ],
+  "scripts": {
+    "dev": "node src/server.js",
+    "start": "node src/server.js",
+    "test": "node --test tests/*.test.js",
+    "lint": "node scripts/check-syntax.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

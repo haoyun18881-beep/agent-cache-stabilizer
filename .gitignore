@@ -1,0 +1,12 @@
+config.json
+logs/
+state/
+backups/
+node_modules/
+coverage/
+.env
+.env.*
+npm-debug.log*
+*.tgz
+*.log
+*.tmp
