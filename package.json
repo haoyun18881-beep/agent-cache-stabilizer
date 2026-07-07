@@ -1,9 +1,9 @@
 {
   "name": "agent-cache-stabilizer",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": false,
   "type": "module",
-  "description": "OpenAI-compatible proxy that stabilizes agent message streams for prompt-cache friendly upstream calls.",
+  "description": "OpenAI-compatible context stabilizer for long-running agents: stable prefixes, main/sub-agent lanes, waterline trimming, tool-chain repair, routing, and streaming passthrough.",
   "license": "BUSL-1.1",
   "main": "src/server.js",
   "repository": {
@@ -28,6 +28,11 @@
     "agent",
     "openai-compatible",
     "prompt-cache",
+    "context-stabilizer",
+    "agent-runtime",
+    "waterline",
+    "tool-chain",
+    "streaming",
     "proxy",
     "long-context"
   ],

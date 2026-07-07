@@ -1,23 +1,65 @@
 # Agent Cache Stabilizer
 
-Agent Cache Stabilizer, or ACS, is a local OpenAI-compatible proxy for agent
-runtimes. It keeps long agent conversations friendlier to upstream prompt-cache
-behavior by preserving stable message prefixes, separating main and sub-agent
-lanes, and trimming old low-value context only after configurable waterlines are
-exceeded.
+Agent Cache Stabilizer, or ACS, is a local OpenAI-compatible context
+stabilizer for long-running agent runtimes. It sits between an agent and an
+OpenAI-compatible upstream provider, then reshapes the outgoing message stream
+so the high-value prefix stays stable, sub-agent traffic does not pollute the
+main lane, and old low-value tool noise is compacted only after configured
+waterlines are exceeded.
 
-ACS is not a long-term memory system, not a summarizer, and not an agent
-orchestrator. It sits between an agent runtime and an OpenAI-compatible upstream
-provider, then normalizes request context so repeated long sessions have a
-better chance of reusing stable prefixes.
+The short version: ACS is not a memory database. It is a cache-shape and
+context-hygiene layer for agents that keep working for a long time.
 
 ## Why This Exists
 
-Long-running agent sessions often send a large, changing message array on every
-model call. Small changes near the front of the array can reduce cache reuse and
-make long tasks more expensive or less stable. ACS keeps the high-value prefix
-stable where possible and moves low-value old context out of the active request
-window when configured limits require it.
+Long agent sessions usually resend a large `messages` array on every model
+call. That creates three practical problems:
+
+- Small changes near the front of the array can reduce upstream prompt-cache
+  reuse.
+- Sub-agent or task traffic can leak into the main agent's active context.
+- Old tool output can grow until the next request becomes expensive, fragile, or
+  too noisy for the model to use well.
+
+ACS is built to keep the useful context shape stable while letting the session
+continue.
+
+## What Makes ACS Different
+
+| Strength | What it means |
+| --- | --- |
+| OpenAI-compatible surface | Existing clients can point `/v1/chat/completions` at ACS instead of directly at the provider. |
+| Stable prefix preservation | System, developer, and early-session messages are kept as a stable prefix where possible. |
+| Main/sub-agent lane separation | Explicit headers and session identity let sub-agent traffic pass through without rewriting the main album. |
+| Waterline trimming | ACS keeps recent context full, archives older low-value tool noise, and drops only after configured token thresholds. |
+| Tool-chain repair | Missing tool results and orphan tool messages can be repaired into provider-acceptable chains. |
+| Session identity recovery | Session keys can come from OpenClaw headers, generic headers, task IDs, request `user`, or an optional session store. |
+| Streaming passthrough | Server-sent event streams are forwarded while usage metadata is still observed when available. |
+| Model/provider routing | Requests can route by exact model or provider prefix, with target-model rewrites when needed. |
+| Hot config reload | Config changes are detected between requests without restarting the process. |
+| Local state option | ACS can persist its waterline state locally for recovery, while keeping credentials out of the repository. |
+
+## Mental Model
+
+Think of ACS as a water tank for the main agent conversation:
+
+```text
+stable prefix
+  system / developer / early identity messages
+
+main lane album
+  recent useful context kept in full
+  older low-value context archived into compact shapes
+  excess context dropped after waterline policy
+
+sub-agent lane
+  passed through by identity
+  does not rewrite the main album
+```
+
+The goal is not to summarize everything. The goal is to preserve the parts that
+make cache reuse and agent continuity more likely, while reducing old noise that
+does not deserve to stay in the live request.
 
 ## Core Behavior
 
@@ -26,17 +68,65 @@ window when configured limits require it.
 | API surface | Exposes an OpenAI-compatible `/v1/chat/completions` endpoint. |
 | Upstream routing | Forwards requests to configured OpenAI-compatible providers. |
 | Stable prefix | Preserves stable system, developer, and early-session messages where possible. |
-| Lane separation | Separates main-agent and sub-agent traffic by headers, task IDs, or session keys. |
-| Waterline trimming | Keeps recent useful context intact, then archives older low-value tool noise when limits are exceeded. |
-| Provider mapping | Allows routing by model/provider configuration. |
-| Local state | Stores only local runtime state needed for cache stabilization and recovery. |
+| Lane separation | Separates main-agent and sub-agent traffic by headers, task IDs, user field, or session keys. |
+| Compaction handling | Detects short agent compaction requests and keeps the internal main album when it is still the same session. |
+| Waterline trimming | Keeps recent context full, archives older low-value tool noise, and drops excess after thresholds. |
+| Tool-chain repair | Inserts compact placeholders for missing tool results and synthetic assistants for orphan tool messages. |
+| Provider mapping | Allows routing by exact model name, provider prefix, inline route, or default upstream. |
+| Streaming | Pipes SSE responses through while continuing to observe usage events when present. |
+| State endpoint | Provides `/state` for the current main-lane waterline summary. |
 
 ## What ACS Does Not Do
 
 - It does not store permanent user memory.
 - It does not decide what an agent should do.
-- It does not replace a project handoff, QA diary, or knowledge base.
-- It does not remove the need to protect prompts, logs, and provider keys.
+- It does not replace a project handoff, QA diary, vector database, or knowledge
+  graph.
+- It does not make private prompts, logs, or provider keys safe to publish.
+
+ACS handles cache shape and request hygiene. Long-term memory still belongs in a
+separate storage and retrieval system.
+
+## When To Use It
+
+ACS is useful when:
+
+- an agent runtime repeatedly sends long OpenAI-style chat requests
+- prompt-cache behavior matters
+- main-agent and sub-agent traffic should be separated
+- tool output is growing faster than the useful decision context
+- upstream providers are OpenAI-compatible but need different routes or model
+  names
+- you want a local, inspectable proxy rather than a black-box hosted layer
+
+It is less useful for short one-shot chats, pure retrieval systems, or workloads
+where every request is intentionally unrelated to the last one.
+
+## Architecture
+
+```text
+agent runtime
+  -> http://127.0.0.1:18801/v1/chat/completions
+      -> identity resolver
+      -> waterline manager
+      -> tool-chain repair
+      -> upstream router
+      -> OpenAI-compatible provider
+```
+
+Supporting modules:
+
+| Path | Purpose |
+| --- | --- |
+| `src/server.js` | HTTP surface, health, reset, state, and chat completion routing. |
+| `src/identity.js` | Main/sub/task lane identity resolution. |
+| `src/waterline.js` | Stable prefix, append/compaction detection, trim policy, and outbound message build. |
+| `src/archive.js` | Compact archive shapes for old tool-heavy or noisy messages. |
+| `src/tool-chain.js` | Provider-safe repair for missing or orphaned tool messages. |
+| `src/upstream-router.js` | Exact model, provider-prefix, inline, and default routing. |
+| `src/upstream.js` | Forwarding, streaming passthrough, headers, and usage observation. |
+| `src/state-persister.js` | Optional local persisted waterline state. |
+| `scripts/acs-observe.ps1` | Local observation script for health, waterline, and recent task activity. |
 
 ## Requirements
 
@@ -87,6 +177,12 @@ Health check:
 Invoke-RestMethod http://127.0.0.1:18801/health
 ```
 
+State check:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:18801/state
+```
+
 Example completion request:
 
 ```powershell
@@ -127,6 +223,22 @@ Common environment overrides:
 Provider API keys should normally come from environment variables such as
 `DEEPSEEK_API_KEY` or `ZHIPU_API_KEY`. Keep real keys out of repository files.
 
+## Waterline Settings
+
+The default policy is intentionally conservative:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `recentFullTokens` | `120000` | Recent main-lane context kept in full. |
+| `archiveQaTokens` | `80000` | Older archived context retained in compact form. |
+| `trimTriggerTokens` | `320000` | Token estimate that triggers trimming. |
+| `trimTargetTokens` | `200000` | Intended post-trim working range. |
+| `archivedToolPrefixChars` | `20` | Prefix length kept for archived tool-heavy messages. |
+
+These are estimates, not provider billing guarantees. They are designed to keep
+the request shape stable enough for long tasks while making old low-value tool
+noise cheaper to carry.
+
 ## Agent Runtime Integration
 
 Point an OpenAI-compatible client at ACS:
@@ -143,15 +255,31 @@ If your runtime can send session headers, ACS recognizes:
 | --- | --- |
 | `x-openclaw-session-key` | Stable OpenClaw session key. |
 | `x-openclaw-session-id` | OpenClaw session ID. |
+| `x-session-key` | Generic stable session key. |
 | `x-session-id` | Generic session ID. |
 | `x-session-affinity` | Generic session affinity key. |
-| `x-acs-lane` | Explicit lane, such as main or sub-agent. |
+| `x-acs-lane` | Explicit lane, such as `main`, `sub`, or `task`. |
 | `x-acs-task-id` | Task or sub-agent ID. |
 | `x-acs-task-name` | Human-readable task name. |
+| `x-acs-batch-name` | Batch name for grouped activity. |
+| `x-acs-group-name` | Group name for grouped activity. |
 
 `identity.openclawSessionStore` is optional. Leave it empty unless you have a
 reviewed local OpenClaw session store path and explicitly want ACS to map
 session IDs back to session keys.
+
+## Provider Routing
+
+`config.example.json` shows three routing styles:
+
+- default upstream for all unmatched models
+- provider routes such as `deepseek-*`
+- exact model routes with target-model rewrites, such as `zhipu/glm-4.5` to
+  `glm-4.5`
+
+This lets a single local endpoint route different model names to different
+OpenAI-compatible providers without changing the calling agent's integration
+pattern.
 
 ## Runtime Files
 
@@ -173,6 +301,16 @@ npm test
 npm start
 npm pack --dry-run
 ```
+
+Optional observation:
+
+```powershell
+powershell -File scripts/acs-observe.ps1
+```
+
+The observe script checks local ACS and sidecar health, current MAIN waterline
+state, recent logs, and recent task artifacts. It does not dispatch agents and
+does not call the upstream model provider.
 
 ## Package Boundary
 
