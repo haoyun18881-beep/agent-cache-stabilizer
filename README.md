@@ -10,6 +10,11 @@ waterlines are exceeded.
 The short version: ACS is not a memory database. It is a cache-shape and
 context-hygiene layer for agents that keep working for a long time.
 
+It was built for the failure mode where an agent seems fine for a while, then a
+native compaction pass or noisy tool history changes the active context enough
+that the model starts losing earlier intent. ACS keeps the request shape calmer
+so long-running sessions can continue without constantly opening a new chat.
+
 ## Why This Exists
 
 Long agent sessions usually resend a large `messages` array on every model
@@ -38,6 +43,23 @@ continue.
 | Model/provider routing | Requests can route by exact model or provider prefix, with target-model rewrites when needed. |
 | Hot config reload | Config changes are detected between requests without restarting the process. |
 | Local state option | ACS can persist its waterline state locally for recovery, while keeping credentials out of the repository. |
+
+## Cache and Continuity Strategy
+
+ACS focuses on the parts of context management that are hard for an agent prompt
+to control directly:
+
+- keep stable identity and policy messages near the front
+- separate main-agent and sub-agent request lanes
+- avoid rewriting the main album for unrelated task traffic
+- compact old low-value tool noise after waterlines
+- preserve recent decision context in full
+- repair tool-call chains into provider-acceptable shape
+
+In practice this can reduce accidental cache churn and make long-running agent
+sessions feel less fragile. Cache behavior still depends on the upstream
+provider, model, request shape, and runtime integration; ACS gives the host a
+local layer to make that shape more predictable.
 
 ## Mental Model
 
@@ -87,6 +109,31 @@ does not deserve to stay in the live request.
 ACS handles cache shape and request hygiene. Long-term memory still belongs in a
 separate storage and retrieval system.
 
+## Optional Memory Recall Extension
+
+Some users may prefer a stronger long-term-memory style: every user turn can be
+matched against a local diary or knowledge index, then a small recalled snippet
+can be injected into the next model request.
+
+ACS does not ship that as the default behavior because dynamic recall changes
+the request prefix and can reduce cache friendliness. It is intentionally kept
+as an extension point.
+
+To build this extension, you need:
+
+- a conversation diary or event logger that stores your own chat history
+- redaction rules before anything becomes searchable memory
+- an embedding model or keyword/FTS indexer
+- a vector index or search store
+- a retriever that returns very small, sourced snippets
+- an ACS or client-side adapter that injects those snippets into the request
+  after the stable prefix
+
+With a local index, recall can be fast enough for interactive use, but the host
+must balance three things: recall quality, privacy, and prompt-cache stability.
+For long project work, a good pattern is to keep ACS responsible for cache shape
+and use a separate memory system for only the few facts that are worth injecting.
+
 ## When To Use It
 
 ACS is useful when:
@@ -95,6 +142,7 @@ ACS is useful when:
 - prompt-cache behavior matters
 - main-agent and sub-agent traffic should be separated
 - tool output is growing faster than the useful decision context
+- you want to delay or avoid brittle native compaction in long sessions
 - upstream providers are OpenAI-compatible but need different routes or model
   names
 - you want a local, inspectable proxy rather than a black-box hosted layer

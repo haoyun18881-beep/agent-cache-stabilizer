@@ -1,7 +1,7 @@
 {
   "id": "agent-cache-stabilizer",
   "name": "agent-cache-stabilizer",
-  "description": "OpenAI-compatible context stabilizer for long-running agents: stable prefixes, main/sub-agent lanes, waterline trimming, tool-chain repair, model routing, and streaming passthrough.",
+  "description": "OpenAI-compatible context stabilizer for long-running agents: stable prefixes, main/sub-agent lanes, waterline trimming, compaction resistance, tool-chain repair, model routing, streaming passthrough, and optional memory-recall hooks.",
   "configSchema": {
     "type": "object",
     "additionalProperties": false
