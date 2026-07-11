@@ -1,65 +1,67 @@
 # Agent Cache Stabilizer
 
-Agent Cache Stabilizer, or ACS, is a local OpenAI-compatible context
-stabilizer for long-running agent runtimes. It sits between an agent and an
-OpenAI-compatible upstream provider, then reshapes the outgoing message stream
-so the high-value prefix stays stable, sub-agent traffic does not pollute the
-main lane, and old low-value tool noise is compacted only after configured
-waterlines are exceeded.
+> **它能在请求发给 LLM 之前重写上下文，让缓存命中长期稳定在作者实测的97%+，直接减少重复输入 Token 和 Agent 成本。**
 
-The short version: ACS is not a memory database. It is a cache-shape and
-context-hygiene layer for agents that keep working for a long time.
+Agent Cache Stabilizer（ACS）是一个本地、OpenAI 兼容的上下文稳定层。任何能调用 OpenAI 兼容接口的 Agent，都可以把请求先交给 ACS；ACS 会自己整理、修复并重建发给模型的 `messages`。
 
-It was built for the failure mode where an agent seems fine for a while, then a
-native compaction pass or noisy tool history changes the active context enough
-that the model starts losing earlier intent. ACS keeps the request shape calmer
-so long-running sessions can continue without constantly opening a new chat.
+## 它最有价值的地方
 
-## Why This Exists
+### 1. 实打实稳定缓存命中，直接省钱
 
-Long agent sessions usually resend a large `messages` array on every model
-call. That creates three practical problems:
+作者在长期工程运行中的实测缓存命中稳定在97%以上。大量重复的系统提示、身份、规则和早期上下文可以继续命中上游 Prompt Cache，不必每轮重新付完整输入成本。
 
-- Small changes near the front of the array can reduce upstream prompt-cache
-  reuse.
-- Sub-agent or task traffic can leak into the main agent's active context.
-- Old tool output can grow until the next request becomes expensive, fragile, or
-  too noisy for the model to use well.
+### 2. 它真的能改写发给 LLM 的上下文
 
-ACS is built to keep the useful context shape stable while letting the session
-continue.
+ACS 不是只做监控。它在请求发送前拆分稳定前缀、主 Agent 上下文和子 Agent 流量，再按水位线重建最终 `messages`。
 
-## What Makes ACS Different
+### 3. 几乎任何 Agent 框架都能接
 
-| Strength | What it means |
-| --- | --- |
-| OpenAI-compatible surface | Existing clients can point `/v1/chat/completions` at ACS instead of directly at the provider. |
-| Stable prefix preservation | System, developer, and early-session messages are kept as a stable prefix where possible. |
-| Main/sub-agent lane separation | Explicit headers and session identity let sub-agent traffic pass through without rewriting the main album. |
-| Waterline trimming | ACS keeps recent context full, archives older low-value tool noise, and drops only after configured token thresholds. |
-| Tool-chain repair | Missing tool results and orphan tool messages can be repaired into provider-acceptable chains. |
-| Session identity recovery | Session keys can come from OpenClaw headers, generic headers, task IDs, request `user`, or an optional session store. |
-| Streaming passthrough | Server-sent event streams are forwarded while usage metadata is still observed when available. |
-| Model/provider routing | Requests can route by exact model or provider prefix, with target-model rewrites when needed. |
-| Hot config reload | Config changes are detected between requests without restarting the process. |
-| Local state option | ACS can persist its waterline state locally for recovery, while keeping credentials out of the repository. |
+只要客户端支持 OpenAI 兼容接口，就可以把 `/v1/chat/completions` 指向 ACS，再由 ACS 转发到真实模型服务。
 
-## Cache and Continuity Strategy
+### 4. 主 Agent 不会被子 Agent 上下文污染
 
-ACS focuses on the parts of context management that are hard for an agent prompt
-to control directly:
+主会话和子任务使用不同 Lane（通道）。子 Agent 可以正常工作，但不会反复改写主 Agent 的长期上下文相册。
 
-- keep stable identity and policy messages near the front
-- separate main-agent and sub-agent request lanes
-- avoid rewriting the main album for unrelated task traffic
-- compact old low-value tool noise after waterlines
-- preserve recent decision context in full
-- repair tool-call chains into provider-acceptable shape
+### 5. 旧工具噪声按水位线自动整理
 
-In practice this can reduce accidental cache churn and make long-running agent
-sessions feel less fragile. Cache behavior still depends on the upstream
-provider, model, request shape, and runtime integration; ACS gives the host a
-local layer to make that shape more predictable.
+最近的重要决策保持完整；更老的工具输出和低价值噪声先压缩归档，超过阈值后再丢弃，不必粗暴清空整段历史。
+
+### 6. 损坏的工具调用链可以自动修复
+
+缺失的 tool result、孤立的工具消息和不符合上游格式的调用链，可以在转发前修成模型能够接受的结构。
+
+### 7. 模型路由、流式转发和热更新一起解决
+
+ACS 可以按模型名、Provider（服务商）前缀或默认路由转发请求，同时支持 SSE 流式响应和配置热加载。
+
+### 8. 需要远古历史召回时，已经有文档化扩展点
+
+公开版本不内置召回后端，也不把它做成默认开关；README 已给出 Optional Memory Recall（可选记忆召回）扩展方案：把用户输入交给本地关键词或向量索引，取回少量历史片段，再注入上下文。作者没有默认开启，因为日常代码工程不需要远古历史，而且动态召回会让缓存命中略降；需要长期人格或知识记忆的用户，可以让自己的 Agent 按这个扩展点加上。
+
+## 最简单的用法
+
+1. 启动 ACS；
+2. 把 Agent 的 OpenAI Base URL 指向 ACS；
+3. ACS 自动重写上下文并转发到真实模型。
+
+```text
+Agent -> ACS -> OpenAI-compatible model provider
+```
+
+如果你需要远古历史召回，可以直接告诉 Agent：
+
+```text
+按照 README 的 Optional Memory Recall Extension，
+给 ACS 接一个本地日记/向量索引，只注入少量有来源的历史片段。
+```
+
+97%+ 是作者真实运行中的观测值，不是固定协议保证；具体命中率仍取决于上游模型服务、请求形状和集成方式。
+
+## English quick overview
+
+ACS rewrites outbound LLM context before each request. It stabilizes the prompt prefix, separates main/sub-agent lanes, compacts old tool noise by waterlines, repairs broken tool chains, and routes requests to OpenAI-compatible providers.
+
+The author has observed **97%+ prompt-cache hit rates** in long-running engineering workloads. Optional diary/vector recall can be added through the documented extension point when long-range memory matters more than the last percentage point of cache stability.
 
 ## Mental Model
 
